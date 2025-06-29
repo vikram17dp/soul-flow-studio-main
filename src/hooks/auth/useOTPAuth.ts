@@ -62,31 +62,60 @@ export const useOTPAuth = () => {
       const phoneNumber = normalizePhoneNumber(formData.countryCode, formData.phoneNumber);
       const userName = formData.name?.trim() || 'Phone User';
       
-      console.log('OTP verified successfully for:', phoneNumber);
-      console.log('Firebase user:', firebaseUser.uid);
+      console.log('✅ OTP verified successfully for:', phoneNumber);
+      console.log('🔥 Firebase user:', firebaseUser.uid);
       
-      // Authenticate with Supabase
-      await authenticateOTPUser(phoneNumber, userName);
+      // Authenticate with Supabase and wait for session creation
+      const authResult = await authenticateOTPUser(phoneNumber, userName);
       
-      toast({
-        title: "Success!",
-        description: "Phone number verified and signed in successfully!",
-      });
-      
-      // Clear Firebase recaptcha using the proper cleanup function
-      clearRecaptcha();
-      
-      // Redirect to dashboard
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 1000);
+      if (authResult?.success) {
+        console.log('✅ Supabase authentication successful');
+        
+        toast({
+          title: "Success!",
+          description: "Phone number verified and signed in successfully!",
+        });
+        
+        // Clear Firebase recaptcha using the proper cleanup function
+        clearRecaptcha();
+        
+        // Wait for auth context to update (give it time to process the session)
+        console.log('⏳ Waiting for auth context to update...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Use React Router navigate instead of hard redirect to preserve state
+        console.log('🚀 Redirecting to dashboard...');
+        
+        // Check if we're in a React app with routing
+        if (typeof window !== 'undefined' && window.history) {
+          // Use history API for SPA navigation
+          window.history.pushState({}, '', '/dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          // Fallback to hard redirect
+          window.location.href = '/dashboard';
+        }
+      } else {
+        throw new Error('Authentication failed - no session created');
+      }
       
     } catch (error: any) {
-      console.error('OTP success handling error:', error);
+      console.error('❌ OTP success handling error:', error);
+      
+      // Clear any partial auth state
+      clearRecaptcha();
+      
+      let errorMessage = "Failed to complete authentication. Please try again.";
+      
+      if (error.message?.includes('Failed to create authenticated session')) {
+        errorMessage = "Session creation failed. Please try signing in again.";
+      } else if (error.message?.includes('User already registered')) {
+        errorMessage = "Account exists. Please try signing in with your existing credentials.";
+      }
       
       toast({
         title: "Authentication Error", 
-        description: "Failed to complete authentication. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
