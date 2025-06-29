@@ -47,7 +47,14 @@ export const useFirebaseOTP = () => {
 
   const setupRecaptcha = async () => {
     try {
-      const isProduction = window.location.hostname !== 'localhost';
+      const isLocalhost = window.location.hostname === 'localhost';
+      
+      if (isLocalhost && auth.settings.appVerificationDisabledForTesting) {
+        console.log('🚫 Skipping reCAPTCHA setup - app verification disabled for testing');
+        return null;
+      }
+
+      const isProduction = !isLocalhost;
       
       console.log('🔍 Checking reCAPTCHA state...');
       console.log('- recaptchaInitialized:', recaptchaInitialized);
@@ -166,7 +173,7 @@ export const useFirebaseOTP = () => {
     return cleanCountryCode + cleanPhone;
   };
 
-  const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => void) => {
+const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => void) => {
     let phoneNumber = '';
     try {
       setIsLoading(true);
@@ -179,23 +186,46 @@ export const useFirebaseOTP = () => {
         throw new Error('Please enter a valid phone number');
       }
 
-      console.log('🔒 Setting up reCAPTCHA...');
-      const appVerifier = await setupRecaptcha();
+      const isLocalhost = window.location.hostname === 'localhost';
       
-      // Add a small delay to ensure reCAPTCHA is fully ready
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log('📤 Attempting to send OTP with Firebase...');
-      const result = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
-      console.log('✅ OTP sent successfully');
-      
-      setConfirmationResult(result);
-      setAuthMode('otp');
-      
-      toast({
-        title: "OTP sent!",
-        description: `Verification code sent to ${phoneNumber}`,
-      });
+      if (isLocalhost && auth.settings.appVerificationDisabledForTesting) {
+        console.log('🚫 Using localhost mode - no reCAPTCHA required');
+        
+        // For localhost with app verification disabled, pass null as verifier
+        console.log('📤 Attempting to send OTP with Firebase (localhost mode)...');
+        const result = await signInWithPhoneNumber(auth, phoneNumber, null as any);
+        console.log('✅ OTP sent successfully (localhost mode)');
+        
+        setConfirmationResult(result);
+        setAuthMode('otp');
+        
+        toast({
+          title: "OTP sent!",
+          description: `Verification code sent to ${phoneNumber}`,
+        });
+      } else {
+        console.log('🔒 Setting up reCAPTCHA for production/non-localhost...');
+        const appVerifier = await setupRecaptcha();
+        
+        if (!appVerifier) {
+          throw new Error('Failed to initialize reCAPTCHA verifier');
+        }
+        
+        // Add a small delay to ensure reCAPTCHA is fully ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log('📤 Attempting to send OTP with Firebase (production mode)...');
+        const result = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+        console.log('✅ OTP sent successfully (production mode)');
+        
+        setConfirmationResult(result);
+        setAuthMode('otp');
+        
+        toast({
+          title: "OTP sent!",
+          description: `Verification code sent to ${phoneNumber}`,
+        });
+      }
     } catch (error: any) {
       console.error('OTP send error:', error);
       
