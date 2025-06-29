@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDVMWdEn3QkdQ_c1cXpAkoS257D8Wz5-NM",
@@ -17,44 +17,19 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);
 
-// Configure Firebase Auth settings for development
-if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-  // Option 1: Connect to Firebase Auth Emulator (recommended for testing)
-  const useEmulator = true; // Set to false to use real Firebase
-  
-  if (useEmulator) {
-    try {
-      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-      console.log('🔧 Firebase Auth Emulator connected - no domain restrictions!');
-      console.log('Start emulator with: firebase emulators:start --only auth');
-    } catch (error) {
-      console.log('Firebase Auth Emulator not running, falling back to production mode');
-      // Disable app verification for localhost testing as fallback
-      auth.settings.appVerificationDisabledForTesting = true;
-      console.log('Firebase Auth configured for localhost development - app verification disabled');
-    }
-  } else {
-    // Disable app verification for localhost testing
-    auth.settings.appVerificationDisabledForTesting = true;
-    console.log('Firebase Auth configured for localhost development - app verification disabled');
-  }
-} else {
-  auth.settings.appVerificationDisabledForTesting = false;
-  console.log('Firebase Auth configured for production - app verification enabled');
-}
-
-// Development configuration
+// Configure Firebase Auth settings
 if (typeof window !== 'undefined') {
-  // Log current domain for Firebase configuration
-  console.log('Current domain for Firebase:', window.location.hostname);
+  // Only disable app verification for localhost development
   if (window.location.hostname === 'localhost') {
-    console.log('🚀 LOCALHOST TESTING OPTIONS:');
-    console.log('1. Use Firebase Auth Emulator (recommended): firebase emulators:start --only auth');
-    console.log('2. Add test phone numbers in Firebase Console');
-    console.log('3. Request domain whitelist access from Firebase admin');
+    auth.settings.appVerificationDisabledForTesting = true;
+    console.log('🔧 Firebase Auth: App verification disabled for localhost development');
   } else {
-    console.log('Make sure this domain is added to Firebase Console → Authentication → Settings → Authorized domains');
+    auth.settings.appVerificationDisabledForTesting = false;
+    console.log('🚀 Firebase Auth: Production mode - app verification enabled');
   }
+  
+  // Log current domain for debugging
+  console.log('Current domain:', window.location.hostname);
 }
 
 export default app;

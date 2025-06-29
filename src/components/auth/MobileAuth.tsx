@@ -34,15 +34,21 @@ export const MobileAuth = () => {
         const container = document.createElement('div');
         container.id = 'recaptcha-container';
         
-        // Show reCAPTCHA on localhost for debugging, hide in production
-        const isLocalhost = window.location.hostname === 'localhost';
-        if (isLocalhost) {
+        const isProduction = window.location.hostname !== 'localhost';
+        
+        if (isProduction) {
+          // Production: invisible reCAPTCHA
+          container.style.display = 'none';
+          console.log('🔒 reCAPTCHA container created for production (invisible)');
+        } else {
+          // Development: visible reCAPTCHA for debugging
           container.style.display = 'block';
           container.style.margin = '10px auto';
           container.style.textAlign = 'center';
-          console.log('reCAPTCHA container visible for localhost debugging');
-        } else {
-          container.style.display = 'none';
+          container.style.border = '2px dashed #ccc';
+          container.style.padding = '10px';
+          container.innerHTML = '<p style="font-size: 12px; color: #666;">reCAPTCHA will appear here</p>';
+          console.log('🔧 reCAPTCHA container visible for localhost debugging');
         }
         
         document.body.appendChild(container);
@@ -56,6 +62,16 @@ export const MobileAuth = () => {
       const container = document.getElementById('recaptcha-container');
       if (container && container.parentNode) {
         container.parentNode.removeChild(container);
+      }
+      
+      // Clear any Firebase reCAPTCHA verifier
+      if ((window as any).recaptchaVerifier) {
+        try {
+          (window as any).recaptchaVerifier.clear();
+          delete (window as any).recaptchaVerifier;
+        } catch (error) {
+          console.log('Error cleaning up reCAPTCHA on unmount:', error);
+        }
       }
     };
   }, []);
