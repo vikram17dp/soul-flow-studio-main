@@ -1,158 +1,65 @@
 
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
+import { signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { AuthFormData, AuthMode } from './types';
+import useRecaptchaManager from '@/hooks/useRecaptchaManager';
 
 export const useFirebaseOTP = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [recaptchaInitialized, setRecaptchaInitialized] = useState(false);
+  
+  // Use the robust reCAPTCHA manager
+  const { 
+    setupRecaptcha, 
+    resetRecaptcha, 
+    isInitialized: recaptchaInitialized,
+    isRendering: recaptchaRendering 
+  } = useRecaptchaManager(auth, {
+    onSuccess: (response) => {
+      console.log('✅ reCAPTCHA solved via manager:', response?.length || 0);
+      toast({
+        title: "reCAPTCHA Solved",
+        description: "Verification completed successfully.",
+      });
+    },
+    onExpired: () => {
+      toast({
+        title: "Verification Expired",
+        description: "Please solve the reCAPTCHA again.",
+        variant: "destructive",
+      });
+    },
+    onError: (error) => {
+      console.error('❌ reCAPTCHA error via manager:', error);
+      toast({
+        title: "Verification Error",
+        description: "reCAPTCHA verification failed. Please refresh and try again.",
+        variant: "destructive",
+      });
+    }
+  });
 
-  const clearRecaptcha = () => {
-    console.log('🧹 Clearing reCAPTCHA...');
-    
-    // Clear Firebase reCAPTCHA verifier
-    if ((window as any).recaptchaVerifier) {
-      try {
-        (window as any).recaptchaVerifier.clear();
-        console.log('✅ Firebase reCAPTCHA verifier cleared');
-      } catch (error) {
-        console.log('⚠️ Error clearing Firebase reCAPTCHA verifier:', error);
-      }
-      delete (window as any).recaptchaVerifier;
-    }
-    
-    // Clear the container content
-    const container = document.getElementById('recaptcha-container');
-    if (container) {
-      container.innerHTML = '';
-      console.log('✅ reCAPTCHA container cleared');
-    }
-    
-    // Reset Google reCAPTCHA if it exists
-    if (typeof (window as any).grecaptcha !== 'undefined' && (window as any).grecaptcha.reset) {
-      try {
-        (window as any).grecaptcha.reset();
-        console.log('✅ Google reCAPTCHA reset');
-      } catch (error) {
-        console.log('⚠️ Error resetting Google reCAPTCHA:', error);
-      }
-    }
-    
-    setRecaptchaInitialized(false);
-  };
+  // Use the manager's reset function instead of custom clear logic
+  const clearRecaptcha = resetRecaptcha;
 
-  const setupRecaptcha = async () => {
+  // Use the manager's setup function instead of custom setup logic
+  const setupRecaptchaWrapper = async () => {
     try {
-      const isLocalhost = window.location.hostname === 'localhost';
+      console.log('🔧 Setting up reCAPTCHA using manager...');
+      const verifier = await setupRecaptcha();
       
-      if (isLocalhost && auth.settings.appVerificationDisabledForTesting) {
-        console.log('🚫 Skipping reCAPTCHA setup - app verification disabled for testing');
+      if (!verifier) {
+        console.log('🚫 No reCAPTCHA verifier created (likely localhost with testing disabled)');
         return null;
       }
-
-      const isProduction = !isLocalhost;
       
-      console.log('🔍 Checking reCAPTCHA state...');
-      console.log('- recaptchaInitialized:', recaptchaInitialized);
-      console.log('- window.recaptchaVerifier exists:', !!(window as any).recaptchaVerifier);
-      
-      // If reCAPTCHA is already initialized and working, reuse it
-      if (recaptchaInitialized && (window as any).recaptchaVerifier) {
-        console.log('♻️ Reusing existing reCAPTCHA verifier');
-        return (window as any).recaptchaVerifier;
-      }
-      
-      // Clear any existing reCAPTCHA completely
-      clearRecaptcha();
-      
-      // Wait for cleanup to complete
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Ensure the container exists and is properly configured
-      let recaptchaContainer = document.getElementById('recaptcha-container');
-      if (!recaptchaContainer) {
-        // Create container if it doesn't exist
-        recaptchaContainer = document.createElement('div');
-        recaptchaContainer.id = 'recaptcha-container';
-        recaptchaContainer.style.display = isProduction ? 'none' : 'block';
-        document.body.appendChild(recaptchaContainer);
-        console.log('🔧 Created reCAPTCHA container');
-      }
-      
-      // Wait a bit to ensure DOM is ready
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Production reCAPTCHA configuration
-      const recaptchaConfig: any = {
-        size: isProduction ? 'invisible' : 'normal',
-        callback: (response: string) => {
-          console.log('✅ reCAPTCHA solved successfully');
-          console.log('✅ Token length:', response ? response.length : 'No token');
-          if (!response) {
-            console.error('❌ reCAPTCHA callback received empty response!');
-          }
-        },
-        'expired-callback': () => {
-          console.warn('⚠️ reCAPTCHA expired');
-          setRecaptchaInitialized(false);
-          toast({
-            title: "Verification Expired",
-            description: "Please try again to verify you're human.",
-            variant: "destructive",
-          });
-        },
-        'error-callback': (error: any) => {
-          console.error('❌ reCAPTCHA error:', error);
-          setRecaptchaInitialized(false);
-          toast({
-            title: "Verification Error",
-            description: "reCAPTCHA verification failed. Please refresh and try again.",
-            variant: "destructive",
-          });
-        }
-      };
-
-      console.log(`🔒 Creating NEW reCAPTCHA verifier for ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}...`);
-      
-      const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', recaptchaConfig);
-      (window as any).recaptchaVerifier = verifier;
-      
-      // Render the reCAPTCHA
-      console.log('🎯 Rendering reCAPTCHA...');
-      const widgetId = await verifier.render();
-      console.log('✅ reCAPTCHA rendered with widget ID:', widgetId);
-      
-      // Mark as initialized
-      setRecaptchaInitialized(true);
-      
-      // Verify the verifier is properly set up
-      if (!verifier) {
-        throw new Error('reCAPTCHA verifier failed to initialize');
-      }
-      
+      console.log('✅ reCAPTCHA setup completed via manager');
       return verifier;
     } catch (error: any) {
-      console.error('❌ reCAPTCHA setup failed:', error);
-      
-      // If the error is about already rendered, try to clear and retry once
-      if (error.message && error.message.includes('already been rendered')) {
-        console.log('🔄 reCAPTCHA already rendered, clearing and retrying...');
-        clearRecaptcha();
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Don't retry infinitely - just throw the error
-        throw new Error('reCAPTCHA already rendered. Please refresh the page and try again.');
-      }
-      
-      // Clean up on error
-      clearRecaptcha();
-      
+      console.error('❌ reCAPTCHA manager setup failed:', error);
       throw new Error(`Failed to initialize phone verification: ${error.message}`);
     }
   };
@@ -205,7 +112,7 @@ const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => 
         });
       } else {
         console.log('🔒 Setting up reCAPTCHA for production/non-localhost...');
-        const appVerifier = await setupRecaptcha();
+        const appVerifier = await setupRecaptchaWrapper();
         
         if (!appVerifier) {
           throw new Error('Failed to initialize reCAPTCHA verifier');
@@ -269,14 +176,11 @@ const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => 
         console.log('4. Try using test phone number: +91-1234567890 with OTP: 123456');
       }
 
-      // Clear the recaptcha verifier on error
-      if ((window as any).recaptchaVerifier) {
-        try {
-          (window as any).recaptchaVerifier.clear();
-          delete (window as any).recaptchaVerifier;
-        } catch (clearError) {
-          console.log('Error clearing recaptcha after failure:', clearError);
-        }
+      // Clear the recaptcha verifier on error using manager
+      try {
+        clearRecaptcha();
+      } catch (clearError) {
+        console.log('Error clearing recaptcha after failure:', clearError);
       }
     } finally {
       setIsLoading(false);
@@ -287,8 +191,10 @@ const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => 
     sendOTP, 
     confirmationResult, 
     setConfirmationResult,
-    isLoading,
+    isLoading: isLoading || recaptchaRendering,
     normalizePhoneNumber,
-    clearRecaptcha // Expose cleanup function
+    clearRecaptcha, // Expose cleanup function
+    recaptchaInitialized,
+    recaptchaRendering
   };
 };
