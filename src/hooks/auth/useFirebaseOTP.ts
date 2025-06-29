@@ -80,7 +80,7 @@ export const useFirebaseOTP = () => {
     return cleanCountryCode + cleanPhone;
   };
 
-const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => void) => {
+  const sendOTP = async (formData: AuthFormData, setAuthMode: (mode: AuthMode) => void) => {
     let phoneNumber = '';
     try {
       setIsLoading(true);
