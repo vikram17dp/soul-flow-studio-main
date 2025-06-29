@@ -29,6 +29,8 @@ export const MobileAuth = () => {
 
   // Ensure reCAPTCHA container exists
   useEffect(() => {
+    let isComponentMounted = true;
+    
     const ensureRecaptchaContainer = () => {
       if (!document.getElementById('recaptcha-container')) {
         const container = document.createElement('div');
@@ -55,23 +57,32 @@ export const MobileAuth = () => {
       }
     };
 
-    ensureRecaptchaContainer();
+    if (isComponentMounted) {
+      ensureRecaptchaContainer();
+    }
     
     // Cleanup on unmount
     return () => {
-      const container = document.getElementById('recaptcha-container');
-      if (container && container.parentNode) {
-        container.parentNode.removeChild(container);
-      }
+      isComponentMounted = false;
+      
+      console.log('🧹 MobileAuth component unmounting, cleaning up reCAPTCHA...');
       
       // Clear any Firebase reCAPTCHA verifier
       if ((window as any).recaptchaVerifier) {
         try {
           (window as any).recaptchaVerifier.clear();
-          delete (window as any).recaptchaVerifier;
+          console.log('✅ Firebase reCAPTCHA verifier cleared on unmount');
         } catch (error) {
-          console.log('Error cleaning up reCAPTCHA on unmount:', error);
+          console.log('Error clearing Firebase reCAPTCHA verifier on unmount:', error);
         }
+        delete (window as any).recaptchaVerifier;
+      }
+      
+      // Remove container if it exists
+      const container = document.getElementById('recaptcha-container');
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+        console.log('✅ reCAPTCHA container removed on unmount');
       }
     };
   }, []);

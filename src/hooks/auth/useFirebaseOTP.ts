@@ -9,20 +9,61 @@ export const useFirebaseOTP = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [recaptchaInitialized, setRecaptchaInitialized] = useState(false);
+
+  const clearRecaptcha = () => {
+    console.log('🧹 Clearing reCAPTCHA...');
+    
+    // Clear Firebase reCAPTCHA verifier
+    if ((window as any).recaptchaVerifier) {
+      try {
+        (window as any).recaptchaVerifier.clear();
+        console.log('✅ Firebase reCAPTCHA verifier cleared');
+      } catch (error) {
+        console.log('⚠️ Error clearing Firebase reCAPTCHA verifier:', error);
+      }
+      delete (window as any).recaptchaVerifier;
+    }
+    
+    // Clear the container content
+    const container = document.getElementById('recaptcha-container');
+    if (container) {
+      container.innerHTML = '';
+      console.log('✅ reCAPTCHA container cleared');
+    }
+    
+    // Reset Google reCAPTCHA if it exists
+    if (typeof (window as any).grecaptcha !== 'undefined' && (window as any).grecaptcha.reset) {
+      try {
+        (window as any).grecaptcha.reset();
+        console.log('✅ Google reCAPTCHA reset');
+      } catch (error) {
+        console.log('⚠️ Error resetting Google reCAPTCHA:', error);
+      }
+    }
+    
+    setRecaptchaInitialized(false);
+  };
 
   const setupRecaptcha = async () => {
     try {
       const isProduction = window.location.hostname !== 'localhost';
       
-      // Clear any existing recaptcha verifier
-      if ((window as any).recaptchaVerifier) {
-        try {
-          (window as any).recaptchaVerifier.clear();
-        } catch (error) {
-          console.log('Clearing existing recaptcha:', error);
-        }
-        delete (window as any).recaptchaVerifier;
+      console.log('🔍 Checking reCAPTCHA state...');
+      console.log('- recaptchaInitialized:', recaptchaInitialized);
+      console.log('- window.recaptchaVerifier exists:', !!(window as any).recaptchaVerifier);
+      
+      // If reCAPTCHA is already initialized and working, reuse it
+      if (recaptchaInitialized && (window as any).recaptchaVerifier) {
+        console.log('♻️ Reusing existing reCAPTCHA verifier');
+        return (window as any).recaptchaVerifier;
       }
+      
+      // Clear any existing reCAPTCHA completely
+      clearRecaptcha();
+      
+      // Wait for cleanup to complete
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       // Ensure the container exists and is properly configured
       let recaptchaContainer = document.getElementById('recaptcha-container');
@@ -30,12 +71,10 @@ export const useFirebaseOTP = () => {
         // Create container if it doesn't exist
         recaptchaContainer = document.createElement('div');
         recaptchaContainer.id = 'recaptcha-container';
+        recaptchaContainer.style.display = isProduction ? 'none' : 'block';
         document.body.appendChild(recaptchaContainer);
         console.log('🔧 Created reCAPTCHA container');
       }
-
-      // Clear container content to ensure clean state
-      recaptchaContainer.innerHTML = '';
       
       // Wait a bit to ensure DOM is ready
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -52,6 +91,7 @@ export const useFirebaseOTP = () => {
         },
         'expired-callback': () => {
           console.warn('⚠️ reCAPTCHA expired');
+          setRecaptchaInitialized(false);
           toast({
             title: "Verification Expired",
             description: "Please try again to verify you're human.",
@@ -60,6 +100,7 @@ export const useFirebaseOTP = () => {
         },
         'error-callback': (error: any) => {
           console.error('❌ reCAPTCHA error:', error);
+          setRecaptchaInitialized(false);
           toast({
             title: "Verification Error",
             description: "reCAPTCHA verification failed. Please refresh and try again.",
@@ -68,20 +109,18 @@ export const useFirebaseOTP = () => {
         }
       };
 
-      // Add isolated parameter for production to avoid conflicts
-      if (isProduction) {
-        recaptchaConfig.isolated = true;
-      }
-
-      console.log(`🔒 Creating reCAPTCHA verifier for ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}...`);
+      console.log(`🔒 Creating NEW reCAPTCHA verifier for ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}...`);
       
       const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', recaptchaConfig);
       (window as any).recaptchaVerifier = verifier;
       
-      // Always render the reCAPTCHA to ensure it's properly initialized
+      // Render the reCAPTCHA
       console.log('🎯 Rendering reCAPTCHA...');
       const widgetId = await verifier.render();
       console.log('✅ reCAPTCHA rendered with widget ID:', widgetId);
+      
+      // Mark as initialized
+      setRecaptchaInitialized(true);
       
       // Verify the verifier is properly set up
       if (!verifier) {
@@ -89,18 +128,23 @@ export const useFirebaseOTP = () => {
       }
       
       return verifier;
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ reCAPTCHA setup failed:', error);
       
-      // Clean up on error
-      if ((window as any).recaptchaVerifier) {
-        try {
-          (window as any).recaptchaVerifier.clear();
-          delete (window as any).recaptchaVerifier;
-        } catch (cleanupError) {
-          console.log('Error during reCAPTCHA cleanup:', cleanupError);
-        }
+      // If the error is about already rendered, try to clear and retry once
+      if (error.message && error.message.includes('already been rendered')) {
+        console.log('🔄 reCAPTCHA already rendered, clearing and retrying...');
+        clearRecaptcha();
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Don't retry infinitely - just throw the error
+        throw new Error('reCAPTCHA already rendered. Please refresh the page and try again.');
       }
+      
+      // Clean up on error
+      clearRecaptcha();
       
       throw new Error(`Failed to initialize phone verification: ${error.message}`);
     }
@@ -214,6 +258,7 @@ export const useFirebaseOTP = () => {
     confirmationResult, 
     setConfirmationResult,
     isLoading,
-    normalizePhoneNumber
+    normalizePhoneNumber,
+    clearRecaptcha // Expose cleanup function
   };
 };

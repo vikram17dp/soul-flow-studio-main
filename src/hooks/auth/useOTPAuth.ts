@@ -14,7 +14,8 @@ export const useOTPAuth = () => {
     confirmationResult, 
     setConfirmationResult,
     isLoading: firebaseLoading,
-    normalizePhoneNumber
+    normalizePhoneNumber,
+    clearRecaptcha
   } = useFirebaseOTP();
   
   const { authenticateOTPUser } = useSupabaseAuth();
@@ -72,15 +73,8 @@ export const useOTPAuth = () => {
         description: "Phone number verified and signed in successfully!",
       });
       
-      // Clear Firebase recaptcha
-      if ((window as any).recaptchaVerifier) {
-        try {
-          (window as any).recaptchaVerifier.clear();
-          delete (window as any).recaptchaVerifier;
-        } catch (error) {
-          console.log('Error clearing Firebase recaptcha on success:', error);
-        }
-      }
+      // Clear Firebase recaptcha using the proper cleanup function
+      clearRecaptcha();
       
       // Redirect to dashboard
       setTimeout(() => {
